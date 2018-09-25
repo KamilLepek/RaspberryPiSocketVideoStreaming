@@ -1,20 +1,9 @@
 import cv2
 import datetime
 import sys
+from picamera.array import PiRGBArray
+from picamera import PiCamera
 from socket import *
-
-cap = cv2.VideoCapture(0)
-cap.set(3,320); # sets height of the frame
-cap.set(4,240); # sets width of the frame
-
-host = "192.168.0.19"
-port = 4096
-addr = (host, port)
-buf = 1024 # size of buffer to send files
-
-if (len(sys.argv) > 1):
-    input = sys.argv[1]
-
 
 def sendFile(fName):
     sock = socket(AF_INET, SOCK_DGRAM) # AF_INET - ipv4 protocol, SOCK_DGRAM - UDP
@@ -23,8 +12,6 @@ def sendFile(fName):
     frame = open(fName, "rb")
     data = frame.read(buf)
 
-    print("Sending data.." + str(datetime.datetime.now()))
-
     while data:
         if(sock.sendto(data, addr)):
             data = frame.read(buf)
@@ -32,21 +19,55 @@ def sendFile(fName):
     sock.close()
 
 def mainLoop():
-    while(cap.isOpened()):
-        ret,frame = cap.read() # capture frame
-        if ret == True:
-            cv2.imwrite("frame.jpg", frame)
-            if input == "debug":
-                cv2.imshow('frame', frame)
-            sendFile("frame.jpg")
-            count = 0
-        else:
-            break;
-        if cv2.waitKey(1) & 0xFF == ord('q'): # exit if 'q' pressed
+    # capture frames from the camera
+    for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+        
+        image = frame.array
+
+        # write image to file and send via socket
+        cv2.imwrite("frame.jpg", image)
+        sendFile("frame.jpg")
+ 
+        # show the frame if debug mode
+        if input == "debug":
+            cv2.imshow("Frame", image)
+        key = cv2.waitKey(1) & 0xFF
+ 
+        # clear the stream in preparation for the next frame
+        rawCapture.truncate(0)
+ 
+        # if the `q` key was pressed, break from the loop
+        if key == ord("q"):
             break
 
 if __name__ == '__main__':
+
+    # validate if there was input
+    if (len(sys.argv) > 1):
+        input = sys.argv[1]
+
+    width = 480
+    height = 640
+
+    if input == "size":
+        if (len(sys.argv)== 4):
+            try:
+                width = int(sys.argv[2])
+                height = int(sys.argv[3])
+            except ValueError:
+               print("Cannot parse parameters!")                
+
+    # initialize the camera and grab a reference to the raw camera capture
+    camera = PiCamera()
+    camera.resolution = (width, height)
+    camera.framerate = 32
+    rawCapture = PiRGBArray(camera, size=(width, height))
+
+    host = "192.168.0.19"
+    port = 4096
+    addr = (host, port)
+    buf = 1024 # size of buffer to send files
+    
     print(cv2.__version__)
     mainLoop()
-    cap.release()
     cv2.destroyAllWindows()
